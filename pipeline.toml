@@ -1,0 +1,47 @@
+﻿version = "1.0"
+
+# Linux test
+#[jobs.build]
+#steps = ["cargo build --release 2>&1 | tee logs/build.log"]
+#
+#[jobs.lint]
+#steps = ["cargo clippy 2>&1 | tee logs/lint.log"]
+#
+#[jobs.test]
+#needs = ["build"]
+#steps = ["cargo test --all 2>&1 | tee logs/test.log"]
+#
+#[jobs.deploy]
+#needs = ["test"]
+#steps = ["./deploy.sh 2>&1 | tee logs/deploy.log"]
+#
+#[settings]
+#parallel_jobs = ["build", "lint"]
+
+# Windows test
+[jobs.build]
+steps = [
+    "powershell -Command \"if (!(Test-Path -Path logs)) { New-Item -ItemType Directory -Path logs }\"",
+    "powershell -Command \"cargo build --release 2>&1 | Tee-Object -FilePath logs/build.log\""
+]
+
+[jobs.lint]
+steps = [
+    "powershell -Command \"if (!(Test-Path -Path logs)) { New-Item -ItemType Directory -Path logs }\"",
+    "powershell -Command \"cargo clippy 2>&1 | Tee-Object -FilePath logs/lint.log\""
+]
+
+[jobs.test]
+needs = ["build"]
+steps = [
+    "powershell -Command \"if (!(Test-Path -Path logs)) { New-Item -ItemType Directory -Path logs }\"",
+    "powershell -Command \"cargo test --all 2>&1 | Tee-Object -FilePath logs/test.log\""
+]
+
+[jobs.deploy]
+needs = ["test"]
+steps = [
+    "powershell -Command \"if (!(Test-Path -Path logs)) { New-Item -ItemType Directory -Path logs }\"",
+    "powershell -Command \"./deploy.bat 2>&1 | Tee-Object -FilePath logs/deploy.log\""
+]
+

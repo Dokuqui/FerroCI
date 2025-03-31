@@ -1,0 +1,8 @@
+﻿[workspace]
+resolver = "3"
+members = [
+    "ferroci-core",
+    "ferroci-runner",
+    "ferroci-api",
+    "ferroci-cli"
+]
