@@ -2,6 +2,7 @@
 use std::process::{Command, ExitStatus};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use log::{info, error, warn};
 use crate::config::{Pipeline, Job};
 
 pub fn run_pipeline(pipeline: &Pipeline) {
@@ -21,10 +22,9 @@ pub fn run_pipeline(pipeline: &Pipeline) {
                 .iter()
                 .filter(|(job_name, job)| {
                     !completed_jobs_lock.contains(job_name.as_str())
-                        && job
-                        .needs
-                        .as_ref()
-                        .map_or(true, |deps| deps.iter().all(|dep| completed_jobs_lock.contains(dep)))
+                        && job.depends_on.as_ref().map_or(true, |deps| {
+                        deps.iter().all(|dep| completed_jobs_lock.contains(dep))
+                    })
                 })
                 .map(|(name, job)| (name.clone(), job.clone()))
                 .collect();
@@ -33,7 +33,7 @@ pub fn run_pipeline(pipeline: &Pipeline) {
                 let completed_jobs_clone = Arc::clone(&completed_jobs);
                 let job_queue_clone = Arc::clone(&job_queue);
 
-                println!("▶ Running job: {}", job_name);
+                info!("▶ Running job: {}", job_name);
 
                 let handle = thread::spawn(move || {
                     if run_job(&job) {
@@ -43,7 +43,10 @@ pub fn run_pipeline(pipeline: &Pipeline) {
                         let mut job_queue_lock = job_queue_clone.lock().unwrap();
                         job_queue_lock.remove(&job_name);
                     } else {
-                        eprintln!("❌ Job '{}' failed. Stopping execution.", job_name);
+                        let mut completed_jobs_lock = completed_jobs_clone.lock().unwrap();
+                        completed_jobs_lock.insert(job_name.clone());
+
+                        error!("❌ Job '{}' failed. Stopping execution.", job_name);
                         std::process::exit(1);
                     }
                 });
@@ -54,11 +57,11 @@ pub fn run_pipeline(pipeline: &Pipeline) {
         }
 
         if !progress {
-            eprintln!("❌ Dependency loop detected. Exiting.");
+            error!("❌ No progress detected. Possible dependency loop.");
             break;
         }
 
-        thread::sleep(std::time::Duration::from_millis(100)); // Avoid CPU overuse
+        thread::sleep(std::time::Duration::from_millis(100));
     }
 
     for handle in handles {
@@ -70,14 +73,14 @@ fn run_job(job: &Job) -> bool {
     for step in &job.steps {
         match run_command(step) {
             Ok(status) if status.success() => {
-                println!("✅ {} - Success", step);
+                info!("✅ {} - Success", step);
             }
             Ok(status) => {
-                println!("⚠️ {} - Failed with exit code: {}", step, status);
+                warn!("⚠️ {} - Failed with exit code: {}", step, status);
                 return false;
             }
             Err(e) => {
-                eprintln!("❌ Error executing '{}': {}", step, e);
+                error!("❌ Error executing '{}': {}", step, e);
                 return false;
             }
         }
@@ -86,20 +89,22 @@ fn run_job(job: &Job) -> bool {
 }
 
 fn run_command(command: &str) -> Result<ExitStatus, Box<dyn std::error::Error>> {
-    let mut parts = command.split_whitespace();
-    let program = parts.next().ok_or("Empty command")?;
-    let args: Vec<&str> = parts.collect();
+    let (shell, shell_arg) = if cfg!(windows) {
+        ("cmd.exe", "/C")
+    } else {
+        ("sh", "-c")
+    };
 
-    let status = Command::new(program)
-        .args(args)
-        .status();
+    let status = Command::new(shell)
+        .arg(shell_arg)
+        .arg(command)
+        .status()
+        .map_err(|e| format!("❌ Failed to execute command '{}': {}", command, e))?;
 
-    match status {
-        Ok(s) => Ok(s),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            eprintln!("❌ Command '{}' not found!", command);
-            Err(Box::new(e))
-        }
-        Err(e) => Err(Box::new(e)),
+    if status.success() {
+        Ok(status)
+    } else {
+        error!("❌ Command '{}' failed with exit code: {:?}", command, status.code());
+        Ok(status)
     }
 }

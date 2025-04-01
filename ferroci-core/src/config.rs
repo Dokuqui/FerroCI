@@ -4,7 +4,7 @@ use std::fs;
 #[derive(Debug, Deserialize, Clone)]
 pub struct Job {
     pub steps: Vec<String>,
-    pub needs: Option<Vec<String>>,
+    pub depends_on: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
